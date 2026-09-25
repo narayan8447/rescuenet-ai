@@ -44,7 +44,7 @@ class RouteOptimizationAgentV2:
         if not assignments:
             return []
             
-        if os.environ.get("GOOGLE_API_KEY", "dummy_key") == "dummy_key":
+        if os.environ.get("ENABLE_LLM", "false").lower() != "true" or os.environ.get("DISABLE_LLM", "false").lower() == "true" or os.environ.get("GOOGLE_API_KEY", "dummy_key") == "dummy_key":
             logger.warn("using_fallback_route_optimization_due_to_missing_google_key")
             return self._legacy_plan_routes(assignments, priorities, damage_reports)
             

@@ -39,7 +39,7 @@ class PredictionAgentV2:
         if not damage_reports:
             return []
             
-        if os.environ.get("GROQ_API_KEY", "dummy_key") == "dummy_key":
+        if os.environ.get("ENABLE_LLM", "false").lower() != "true" or os.environ.get("DISABLE_LLM", "false").lower() == "true" or os.environ.get("GROQ_API_KEY", "dummy_key") == "dummy_key":
             logger.warn("using_fallback_prediction_due_to_missing_groq_key")
             return self._legacy_forecast(event, damage_reports)
             

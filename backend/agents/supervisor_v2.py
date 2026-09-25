@@ -100,7 +100,7 @@ def build_supervisor_graph():
         # Determine if we should fail or approve based on a mock strict critique
         prompt = f"Critique this allocation: Hospitals {len(state_obj.hospital_assignments)}, Resources {len(state_obj.resource_assignments)}. Reply REJECT if unbalanced, else APPROVE."
         try:
-            if os.environ.get("GROQ_API_KEY", "dummy_key") == "dummy_key":
+            if os.environ.get("ENABLE_LLM", "false").lower() != "true" or os.environ.get("DISABLE_LLM", "false").lower() == "true" or os.environ.get("GROQ_API_KEY", "dummy_key") == "dummy_key":
                 raise ValueError("Dummy key")
             res = llm.invoke([SystemMessage(content="You are a strict disaster plan critic."), HumanMessage(content=prompt)]).content
             if "REJECT" in res and state_obj.retries.get("plan_critic", 0) < 1:
@@ -130,12 +130,13 @@ def build_supervisor_graph():
 
     # Initialize checkpointer for Human-In-The-Loop
     import os
-    if os.environ.get("USE_FAKE_REDIS", "false").lower() == "true":
-        # Use pure-Python MemorySaver on Render to avoid ormsgpack segfaults
+    from backend.core.memory import RedisSaver, memory_manager
+    if os.environ.get("USE_FAKE_REDIS", "false").lower() == "true" or memory_manager.is_fake:
+        # Use pure-Python MemorySaver when Redis is absent or explicitly
+        # disabled. This also avoids incompatible custom serializer behavior.
         from langgraph.checkpoint.memory import MemorySaver
         memory = MemorySaver()
     else:
-        from backend.core.memory import RedisSaver, memory_manager
         try:
             memory_manager.client.ping()
             memory = RedisSaver(memory_manager.client)

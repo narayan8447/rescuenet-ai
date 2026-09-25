@@ -29,7 +29,7 @@ class EventDetectionAgentV2:
         logger.metric("agent_start", 1.0, tags={"agent": "event_detection"})
         
         # If dummy key, fallback to avoid breaking test suites without mock patches
-        if os.environ.get("GROQ_API_KEY", "dummy_key") == "dummy_key":
+        if os.environ.get("ENABLE_LLM", "false").lower() != "true" or os.environ.get("DISABLE_LLM", "false").lower() == "true" or os.environ.get("GROQ_API_KEY", "dummy_key") == "dummy_key":
             logger.warn("using_fallback_event_detection_due_to_missing_groq_key")
             return DisasterEvent(
                 disaster_type=req.disaster_type,

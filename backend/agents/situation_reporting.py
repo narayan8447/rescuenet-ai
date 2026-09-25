@@ -46,7 +46,7 @@ class SituationReportingAgentV2:
         logger.info("situation_reporting_started")
         logger.metric("agent_start", 1.0, tags={"agent": "situation_reporting"})
         
-        if os.environ.get("OPENROUTER_API_KEY", "dummy_key") == "dummy_key":
+        if os.environ.get("ENABLE_LLM", "false").lower() != "true" or os.environ.get("DISABLE_LLM", "false").lower() == "true" or os.environ.get("OPENROUTER_API_KEY", "dummy_key") == "dummy_key":
             logger.warn("using_fallback_situation_reporting_due_to_missing_groq_key")
             return self._legacy_compile_summary(event, damage_reports, priorities, resource_assignments, routes, hospital_assignments, shelter_assignments, relief_plan, volunteer_assignments, forecasts)
         

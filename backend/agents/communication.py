@@ -33,7 +33,7 @@ class CommunicationAgentV2:
         logger.info("communication_started", event_type=event.disaster_type)
         logger.metric("agent_start", 1.0, tags={"agent": "communication"})
         
-        if os.environ.get("OPENROUTER_API_KEY", "dummy_key") == "dummy_key":
+        if os.environ.get("ENABLE_LLM", "false").lower() != "true" or os.environ.get("DISABLE_LLM", "false").lower() == "true" or os.environ.get("OPENROUTER_API_KEY", "dummy_key") == "dummy_key":
             logger.warn("using_fallback_communication_due_to_missing_groq_key")
             return self._legacy_generate_alerts(event, shelter_assignments)
             

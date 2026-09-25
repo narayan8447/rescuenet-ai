@@ -421,26 +421,6 @@ class RAGEngine:
                 self.cache[cache_key] = response
                 return response
                 
-                synthesis_prompt = ChatPromptTemplate.from_messages([
-                    ("system", "You are a helpful disaster response assistant. Answer the user's query comprehensively using the provided web search results. Use markdown formatting."),
-                    ("human", "User Query: {query}\n\nWeb Search Results:\n{web_results}")
-                ])
-                
-                synthesis_chain = synthesis_prompt | llm
-                synthesis_result = synthesis_chain.invoke({
-                    "query": query_obj.query,
-                    "web_results": web_results
-                })
-                
-                final_answer = synthesis_result.content
-                avg_confidence = 1.0  # Reset confidence for successful web extraction
-                citations = [Citation(
-                    source_name="DuckDuckGo Web Search",
-                    chunk_id=str(uuid.uuid4()),
-                    relevance_score=1.0,
-                    text_snippet=web_results[:150] + "..."
-                )]
-                
         except Exception as e:
             logger.error("rag_agentic_failure", error=str(e))
             # Resilient direct-context fallback if Groq/LLM service is offline or dummy

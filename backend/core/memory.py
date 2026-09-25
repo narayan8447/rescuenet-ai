@@ -41,7 +41,17 @@ class RedisMemoryManager(MemoryInterface):
             self._locks = {}
             self._locks_lock = threading.Lock()
         else:
-            self.client = redis.Redis.from_url(redis_url)
+            self.client = redis.Redis.from_url(redis_url, socket_connect_timeout=1, socket_timeout=1)
+            try:
+                self.client.ping()
+            except Exception:
+                # Redis is optional for the single-process/free deployment.
+                # Keep locks and checkpoint-related state functional locally
+                # instead of turning an unavailable Redis into HTTP 500s.
+                self.is_fake = True
+                self.client = fakeredis.FakeRedis()
+                self._locks = {}
+                self._locks_lock = threading.Lock()
             
     def get(self, key: str) -> Optional[Any]:
         val = self.client.get(key)

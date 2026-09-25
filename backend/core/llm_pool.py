@@ -44,7 +44,7 @@ def get_google_llm(max_retries: int = 1):
 def get_groq_llm(max_retries: int = 1) -> ChatGroq:
     """Return a Groq-backed LLM (llama-3.1-8b-instant)."""
     return ChatGroq(
-        model="llama-3.1-8b-instant",
+        model=os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile"),
         api_key=os.environ.get("GROQ_API_KEY", "dummy_key"),
         max_retries=max_retries,
     )

@@ -38,7 +38,7 @@ class RescuePrioritizationAgentV2:
             logger.warn("no_points_of_interest_provided")
             return []
             
-        if os.environ.get("GROQ_API_KEY", "dummy_key") == "dummy_key":
+        if os.environ.get("ENABLE_LLM", "false").lower() != "true" or os.environ.get("DISABLE_LLM", "false").lower() == "true" or os.environ.get("GROQ_API_KEY", "dummy_key") == "dummy_key":
             logger.warn("using_fallback_rescue_prioritization_due_to_missing_groq_key")
             return self._legacy_prioritize(damage_reports, points_of_interest)
             

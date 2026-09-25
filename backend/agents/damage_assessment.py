@@ -39,7 +39,7 @@ class DamageAssessmentAgentV2:
         logger.metric("agent_start", 1.0, tags={"agent": "damage_assessment"})
         
         # If dummy key, fallback to legacy dummy logic to avoid breaking test suites without mock patches
-        if os.environ.get("GROQ_API_KEY", "dummy_key") == "dummy_key":
+        if os.environ.get("ENABLE_LLM", "false").lower() != "true" or os.environ.get("DISABLE_LLM", "false").lower() == "true" or os.environ.get("GROQ_API_KEY", "dummy_key") == "dummy_key":
             logger.warn("using_fallback_damage_assessment_due_to_missing_groq_key")
             return self._legacy_assess(event)
             
