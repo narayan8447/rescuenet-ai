@@ -7,3 +7,6 @@ __pycache__/
 htmlcov/
 site-packages/
 .agents/
+backend/rescuenet.db
+qdrant_data/
+*.db

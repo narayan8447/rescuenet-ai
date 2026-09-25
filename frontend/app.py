@@ -17,7 +17,7 @@ import time
 import random
 
 import os
-API_BASE = os.environ.get("API_BASE", "http://127.0.0.1:8000")
+API_BASE = os.environ.get("API_BASE", "http://127.0.0.1:8000").rstrip("/")
 
 st.set_page_config(page_title="RescueNet AI - Command Dashboard", layout="wide")
 
@@ -90,7 +90,7 @@ with tab_live:
             else:
                 st.session_state["report"] = resp.json()
         except requests.exceptions.ConnectionError:
-            st.error("Cannot reach backend at http://127.0.0.1:8000. Start it with:\n\n`uvicorn backend.main:app --reload --port 8000`")
+            st.error(f"Cannot reach backend at {API_BASE}. Start it with:\n\n`uvicorn backend.main:app --reload --port 8000`")
 
     report = st.session_state.get("report")
 
@@ -314,4 +314,4 @@ with tab_rag:
                     else:
                         st.error(f"Backend error: {resp.text}")
                 except requests.exceptions.ConnectionError:
-                    st.error("Backend not reachable. Ensure uvicorn is running.")
+                    st.error(f"Backend not reachable at {API_BASE}. Please retry after the backend wakes up.")

@@ -16,11 +16,6 @@ from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 from secure import Secure
-from fastapi_cache import FastAPICache
-from fastapi_cache.decorator import cache
-from fastapi_cache.backends.redis import RedisBackend
-from fastapi_cache.backends.inmemory import InMemoryBackend
-from redis import asyncio as aioredis
 import os
 
 from backend.models.schemas import DisasterTriggerRequest, SituationReport
@@ -35,7 +30,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:8501", "http://127.0.0.1:8501"],
+    allow_origins=["*"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -55,32 +50,15 @@ async def set_secure_headers(request, call_next):
 @app.on_event("startup")
 def startup():
     database.init_db()
-    if os.environ.get("USE_FAKE_REDIS") == "true":
-        FastAPICache.init(InMemoryBackend(), prefix="fastapi-cache")
-    else:
-        redis_url = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
-        try:
-            import redis
-            sync_client = redis.Redis.from_url(redis_url)
-            sync_client.ping()
-            redis_client = aioredis.from_url(redis_url)
-            FastAPICache.init(RedisBackend(redis_client), prefix="fastapi-cache")
-        except Exception:
-            print("Redis not available for caching on localhost, falling back to InMemoryBackend")
-            FastAPICache.init(InMemoryBackend(), prefix="fastapi-cache")
-    
-    # Auto-ingest RAG data for zero-dependency deployments
-    if not os.environ.get("QDRANT_URL") and not os.path.exists("qdrant_data"):
-        from backend.rag.rag_engine import rag_engine
-        import logging
-        logging.info("Auto-ingesting RAG documents into local Qdrant...")
-        data = [
-            {"text": "Flood Evacuation: Move to higher ground immediately. Do not walk through moving water. Six inches of moving water can make you fall. If you must walk in water, walk where the water is not moving. Use a stick to check the firmness of the ground in front of you. Do not drive into flooded areas. If floodwaters rise around your car, abandon the car and move to higher ground if you can do so safely.", "metadata": {"source": "FEMA Flood Protocol", "type": "guideline"}},
-            {"text": "Earthquake Response: Drop, Cover, and Hold On! Drop to your hands and knees. Cover your head and neck with your arms. If a sturdy table or desk is nearby, crawl underneath it for shelter. If no shelter is nearby, crawl next to an interior wall (away from windows). Hold on to any sturdy covering so you can move with it until the shaking stops.", "metadata": {"source": "Red Cross Earthquake Guide", "type": "guideline"}},
-            {"text": "Wildfire Protocols: Evacuate immediately if instructed to do so. If trapped, call 911. Turn on lights to increase visibility. Close all doors and windows but do not lock them. Fill sinks and tubs with cold water. Keep your emergency supply kit ready. If outdoors, look for a body of water or cleared area. Lie flat and cover your body with wet clothing or soil.", "metadata": {"source": "National Fire Protection Association", "type": "guideline"}}
-        ]
-        rag_engine.ingest_documents(data)
-
+    # The free deployment is intentionally stateless. Avoid creating a Redis
+    # client or an unbounded in-memory HTTP cache on every worker.
+    from backend.rag.rag_engine import rag_engine
+    if not os.environ.get("QDRANT_URL") and not rag_engine.corpus:
+        rag_engine.ingest_documents([
+            {"text": "Flood Evacuation: Move to higher ground immediately. Do not walk through moving water. Six inches of moving water can make you fall. Do not drive into flooded areas. If floodwaters rise around your car, abandon the car and move to higher ground if you can do so safely.", "metadata": {"source": "FEMA Flood Protocol", "type": "guideline"}},
+            {"text": "Earthquake Response: Drop, Cover, and Hold On. Drop to your hands and knees. Cover your head and neck with your arms. If a sturdy table or desk is nearby, crawl underneath it for shelter. Hold on until the shaking stops.", "metadata": {"source": "Red Cross Earthquake Guide", "type": "guideline"}},
+            {"text": "Wildfire Protocols: Evacuate immediately if instructed. Close all doors and windows but do not lock them. If outdoors, look for a body of water or cleared area. Keep your emergency supply kit ready.", "metadata": {"source": "National Fire Protection Association", "type": "guideline"}},
+        ])
 
 @app.get("/health")
 def health_check():
@@ -117,7 +95,6 @@ def trigger_disaster(request: Request, req: DisasterTriggerRequest):
 
 
 @app.get("/api/state")
-@cache(expire=5)
 def get_state():
     """Current live state of hospitals, shelters, resources, and volunteers."""
     return database.STATE
@@ -142,7 +119,6 @@ def reset():
 
 
 @app.get("/api/incidents")
-@cache(expire=15)
 def get_incidents(limit: int = 20):
     """History of past disaster triggers (long-term memory)."""
     return database.list_incidents(limit=limit)

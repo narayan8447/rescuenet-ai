@@ -3,11 +3,13 @@ services:
     name: rescuenet-backend
     env: python
     buildCommand: pip install --no-cache-dir -r requirements.txt
-    startCommand: uvicorn backend.main:app --host 0.0.0.0 --port $PORT
+    startCommand: uvicorn backend.main:app --host 0.0.0.0 --port $PORT --workers 1
     envVars:
       - key: PYTHON_VERSION
         value: "3.12.7"
       - key: USE_FAKE_REDIS
+        value: "true"
+      - key: DISABLE_LLM
         value: "true"
       - key: GROQ_API_KEY
         sync: false
@@ -16,7 +18,7 @@ services:
     name: rescuenet-frontend
     env: python
     buildCommand: pip install --no-cache-dir -r frontend/requirements.txt
-    startCommand: streamlit run frontend/app.py --server.port $PORT --server.address 0.0.0.0
+    startCommand: streamlit run frontend/app.py --server.port $PORT --server.address 0.0.0.0 --server.headless true --server.enableCORS false --server.enableXsrfProtection false
     envVars:
       - key: PYTHON_VERSION
         value: "3.12.7"

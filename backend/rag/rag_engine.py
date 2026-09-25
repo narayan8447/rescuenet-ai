@@ -22,7 +22,6 @@ except ImportError:
 
 from backend.core.llm_pool import get_openrouter_llm, parse_llm_json
 from langchain_core.prompts import ChatPromptTemplate
-from langchain_community.tools import DuckDuckGoSearchRun
 from pydantic import BaseModel, Field
 
 from backend.rag.models import DocumentChunk, RAGQuery, Citation, RAGResponse
@@ -167,9 +166,11 @@ def sigmoid(x):
     """Convert logits to a 0-1 probability score."""
     return 1 / (1 + math.exp(-x))
 
+_STOPWORDS = {"a", "an", "and", "are", "do", "for", "how", "i", "in", "is", "it", "of", "on", "should", "the", "to", "we", "what", "with"}
+
 def tokenize(text: str) -> List[str]:
-    """Simple regex word tokenization for BM25 search."""
-    return re.findall(r'\w+', text.lower())
+    """Tokenize text for BM25 while ignoring generic connector words."""
+    return [word for word in re.findall(r"\w+", text.lower()) if word not in _STOPWORDS]
 
 def normalize_query(query: str) -> str:
     """Normalize input query for exact search match caching."""
@@ -236,8 +237,14 @@ class RAGEngine:
         client = get_qdrant()
         embedder = get_embedder()
         reranker = get_reranker()
-        llm = get_llm()
-        web_search = DuckDuckGoSearchRun()
+        llm = None
+        # External providers are optional. The local BM25 knowledge base must
+        # remain available when a key is missing, rate-limited, or offline.
+        if any(os.environ.get(name) for name in ("GROQ_API_KEY", "OPENROUTER_API_KEY", "OPENAI_API_KEY", "GOOGLE_API_KEY")) and os.environ.get("ENABLE_LLM", "false").lower() == "true" and os.environ.get("DISABLE_LLM", "false").lower() != "true":
+            try:
+                llm = get_llm()
+            except Exception as exc:
+                logger.warning("rag_llm_unavailable", error=str(exc))
         
         # 1. Normalize Query and check cache
         normalized_q = normalize_query(query_obj.query)
@@ -330,7 +337,11 @@ class RAGEngine:
             
             scored_cands = []
             for cand, score in zip(candidates, cross_scores):
-                scored_cands.append((cand, sigmoid(float(score))))
+                # A zero lexical overlap must never become a positive sigmoid
+                # score (sigmoid(0) == 0.5) in the no-model fallback.
+                overlap = set(tokenize(query_obj.query)).intersection(tokenize(cand["text"]))
+                relevance = sigmoid(float(score)) if overlap else 0.0
+                scored_cands.append((cand, relevance))
                 
             scored_cands.sort(key=lambda x: x[1], reverse=True)
             
@@ -353,7 +364,23 @@ class RAGEngine:
 
         compiled_context = "\n".join(context_parts) if context_parts else "No official SOPs found in Qdrant."
 
-        # 8. Agentic Evaluation & Routing
+        # 8. Agentic Evaluation & Routing. If no provider is configured,
+        # return the authoritative local context directly instead of invoking
+        # a remote search tool that may not be installed or reachable.
+        if llm is None:
+            if context_parts:
+                final_answer = "Based on the retrieved emergency guidelines:\n\n" + "\n\n".join(context_parts)
+            else:
+                final_answer = "No authoritative guidelines found for this query."
+            response = RAGResponse(
+                answer=final_answer,
+                citations=citations,
+                confidence_score=avg_confidence,
+                processing_time_ms=(time.time() - start_time) * 1000,
+            )
+            self.cache[cache_key] = response
+            return response
+
         route_prompt = ChatPromptTemplate.from_messages([
             ("system", "You are an Agentic RAG router for a disaster response system. "
                        "Evaluate if the provided 'Official Context' is sufficient to accurately answer the user's query. "
@@ -378,9 +405,21 @@ class RAGEngine:
                 final_answer = decision.response
                 logger.info("rag_qdrant_hit", query=query_obj.query)
             else:
-                # 6. Fallback to Web Search
-                logger.info("rag_web_search_triggered", search_query=decision.response)
-                web_results = web_search.run(decision.response)
+                # Remote web search is deliberately not part of the critical
+                # path. A local, cited answer is safer than an unverified or
+                # unavailable search result during an emergency.
+                logger.info("rag_external_search_skipped", search_query=decision.response)
+                final_answer = "No authoritative guidelines found for this query."
+                citations = []
+                avg_confidence = 0.0
+                response = RAGResponse(
+                    answer=final_answer,
+                    citations=citations,
+                    confidence_score=avg_confidence,
+                    processing_time_ms=(time.time() - start_time) * 1000,
+                )
+                self.cache[cache_key] = response
+                return response
                 
                 synthesis_prompt = ChatPromptTemplate.from_messages([
                     ("system", "You are a helpful disaster response assistant. Answer the user's query comprehensively using the provided web search results. Use markdown formatting."),
