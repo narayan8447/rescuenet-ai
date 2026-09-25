@@ -176,6 +176,33 @@ def normalize_query(query: str) -> str:
     """Normalize input query for exact search match caching."""
     return re.sub(r'[^\w\s]', '', query.lower()).strip()
 
+
+def deterministic_answer(query: str) -> str:
+    """Return a useful safe answer when no indexed passage matches a query.
+
+    This is intentionally transparent: it does not pretend to be a live AI
+    diagnosis or current emergency bulletin, but it prevents the chat UI from
+    becoming a dead end when the optional providers are disabled.
+    """
+    q = query.lower()
+    if any(word in q for word in ("flood", "water", "drowning")):
+        advice = "Move to higher ground, avoid moving water, never drive through floodwater, and leave a vehicle if water rises around it."
+    elif any(word in q for word in ("earthquake", "tremor", "seismic")):
+        advice = "Drop, cover your head and neck under sturdy furniture, hold on, and stay away from windows until shaking stops."
+    elif any(word in q for word in ("fire", "wildfire", "smoke", "burn")):
+        advice = "Follow evacuation instructions, leave early using an approved route, close doors and windows without locking them, and call local emergency services if trapped."
+    elif any(word in q for word in ("cyclone", "hurricane", "storm", "wind")):
+        advice = "Monitor official alerts, shelter indoors away from windows, keep emergency supplies ready, and do not travel through flooded or blocked roads."
+    elif any(word in q for word in ("landslide", "mudslide")):
+        advice = "Move away from slopes and drainage channels, evacuate when instructed, and avoid roads or bridges covered by mud or debris."
+    elif any(word in q for word in ("hospital", "injury", "medical", "casualty", "ambulance")):
+        advice = "Call local emergency services, give the exact location and number of people affected, provide only safe first aid, and do not move seriously injured people unless there is immediate danger."
+    elif any(word in q for word in ("shelter", "evacuate", "evacuation", "safe")):
+        advice = "Follow official evacuation orders, carry medicines and identification, use designated shelters, and tell responders about anyone needing assistance."
+    else:
+        advice = "For any emergency, move away from immediate danger, call local emergency services, follow official instructions, share your exact location, and avoid entering damaged buildings or blocked roads."
+    return f"No authoritative guidelines found for this exact question. General safety guidance: {advice} If this is an active emergency, contact your local emergency services and follow official local alerts."
+
 class RAGEvaluator(BaseModel):
     """Schema for the LLM to decide if Qdrant context is sufficient."""
     is_sufficient: Optional[bool] = Field(default=False, description="True if the official context fully answers the user query.")
@@ -326,6 +353,27 @@ class RAGEngine:
                 })
                 
         # 7. Cross Encoder Reranking
+        # Do not answer a topic-specific question with a passage from a
+        # different disaster merely because generic words overlap.
+        topic_aliases = {
+            "flood": {"flood", "water", "drowning"},
+            "earthquake": {"earthquake", "tremor", "seismic"},
+            "fire": {"fire", "wildfire", "smoke", "burn"},
+            "storm": {"cyclone", "hurricane", "storm", "wind"},
+            "landslide": {"landslide", "mudslide"},
+        }
+        query_tokens = set(tokenize(query_obj.query))
+        query_topics = [terms for terms in topic_aliases.values() if query_tokens.intersection(terms)]
+        if query_topics:
+            candidates = [
+                cand for cand in candidates
+                if any(
+                    query_tokens.intersection(terms) and
+                    (set(tokenize(cand["text"])).intersection(terms) or
+                     set(tokenize(str(cand["metadata"].get("disaster_type", "")))).intersection(terms))
+                    for terms in query_topics
+                )
+            ]
         context_parts = []
         citations = []
         avg_confidence = 0.0
@@ -371,7 +419,7 @@ class RAGEngine:
             if context_parts:
                 final_answer = "Based on the retrieved emergency guidelines:\n\n" + "\n\n".join(context_parts)
             else:
-                final_answer = "No authoritative guidelines found for this query."
+                final_answer = deterministic_answer(query_obj.query)
             response = RAGResponse(
                 answer=final_answer,
                 citations=citations,

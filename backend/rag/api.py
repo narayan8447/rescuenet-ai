@@ -20,8 +20,8 @@ def search_knowledge_base(query: RAGQuery):
         expansion_prompt = "You are an emergency response expert. Expand the following user query with related disaster management keywords, FEMA protocols, or synonyms to improve vector search recall. Reply ONLY with the expanded query string, no other text."
         try:
             import os
-            if os.environ.get("GROQ_API_KEY", "dummy_key") == "dummy_key":
-                raise ValueError("Dummy key")
+            if os.environ.get("ENABLE_LLM", "false").lower() != "true" or os.environ.get("DISABLE_LLM", "false").lower() == "true" or os.environ.get("GROQ_API_KEY", "dummy_key") == "dummy_key":
+                raise ValueError("LLM expansion disabled")
             expanded = llm.invoke([SystemMessage(content=expansion_prompt), HumanMessage(content=query.query)]).content
             # Combine original and expanded for maximum semantic surface area
             query.query = f"{query.query} {expanded}"
